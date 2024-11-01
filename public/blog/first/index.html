@@ -1,0 +1,261 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+<meta content="IE=edge" http-equiv="X-UA-Compatible"/>
+<meta content="text/html; charset=UTF-8" http-equiv="content-type"/>
+<meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no" />
+<meta name="robots" content="index, follow">
+
+
+
+
+
+
+
+
+
+
+<title>Lifetimes considered useful</title>
+
+
+
+<meta name="title" content="Lifetimes considered useful">
+
+
+
+<meta property="og:type" content="website">
+<meta property="og:url" content="https://example.com/blog/first/">
+
+<meta property="og:site_name" content="">
+
+
+<meta property="og:title" content="Lifetimes considered useful">
+
+
+
+
+
+<meta property="twitter:card" content="summary_large_image">
+<meta property="twitter:url" content="https://example.com/blog/first/">
+
+<meta property="twitter:title" content="Lifetimes considered useful">
+
+
+
+
+<link rel="canonical" href="https://example.com/blog/first/">
+
+
+
+
+<link rel="stylesheet" type="text/css" href="https://speyll.github.io/suCSS/reset-min.css"/>
+<link rel="stylesheet" type="text/css" href="https://speyll.github.io/suCSS/suCSS-min.css"/>
+<link rel="stylesheet" type="text/css" href="https://example.com/css/style.css"/>
+
+<script src="https://example.com/js/script.js" defer></script>
+
+
+</head>
+<body>
+      <header>
+          
+
+  
+
+
+  <nav id="nav-bar">
+    
+      <a href="&#x2F;" class="">
+        
+        &#x2F;home&#x2F;
+      </a>
+    
+      <a href="&#x2F;blog" class="">
+        
+        &#x2F;blog&#x2F;
+      </a>
+    
+    <div>
+      <input type="checkbox" id="theme-toggle" style="display: none;">
+      <label for="theme-toggle" id="theme-toggle-label"><svg id="theme-icon" class="icons"><use href="https://example.com/icons.svg#lightMode"></use></svg></label>
+      <audio id="theme-sound">
+        <source src="https://example.com/click.ogg" type="audio/ogg">
+      </audio>
+    </div>
+  </nav>
+
+
+      </header>
+      <main>
+          
+<div><a href="..">..</a>/<span class="accent-data">first</span></div>
+<time datetime="2024-10-30">Published on: <span class="accent-data">2024-10-30</span></time>
+
+<h1>Lifetimes considered useful</h1>
+
+
+
+<p>I recently ran into the problem of designing an API that required a library user to make choice(s) from a set of values.
+To model this let's imagine we are creating a card game as a library, and we want the user of the library to provide a function for choosing a suit of cards:</p>
+<pre data-lang="rust" style="background-color:#2b303b;color:#c0c5ce;" class="language-rust "><code class="language-rust" data-lang="rust"><span>#[</span><span style="color:#bf616a;">derive</span><span>(Clone, Copy)]
+</span><span style="color:#b48ead;">enum </span><span>Suit {
+</span><span>    Clubs,
+</span><span>    Diamonds,
+</span><span>    Hearts,
+</span><span>    Spades,
+</span><span>}
+</span><span>
+</span><span>#[</span><span style="color:#bf616a;">derive</span><span>(Clone, Copy)]
+</span><span style="color:#b48ead;">struct </span><span>Suits&lt;</span><span style="color:#b48ead;">const</span><span> N: </span><span style="color:#b48ead;">usize</span><span>&gt;([Suit; N]);
+</span><span>
+</span><span style="color:#b48ead;">impl</span><span>&lt;</span><span style="color:#b48ead;">const</span><span> N: </span><span style="color:#b48ead;">usize</span><span>&gt; Suits&lt;N&gt; {
+</span><span>    </span><span style="color:#65737e;">// constructor
+</span><span>    </span><span style="color:#b48ead;">pub fn </span><span style="color:#8fa1b3;">with_suits</span><span>(</span><span style="color:#bf616a;">suits</span><span>: [Suit; N]) -&gt; Suits&lt;N&gt; {
+</span><span>        Suits(suits)
+</span><span>    }
+</span><span>    
+</span><span>    </span><span style="color:#65737e;">// where chooser is some external function that chooses from the provided suits
+</span><span>    </span><span style="color:#b48ead;">pub fn </span><span style="color:#8fa1b3;">choose_suit</span><span>&lt;C&gt;(&amp;</span><span style="color:#bf616a;">self</span><span>, </span><span style="color:#bf616a;">chooser</span><span>: C)
+</span><span>    </span><span style="color:#b48ead;">where
+</span><span>        C: FnOnce([Suit; N]) -&gt; Suit
+</span><span>    {
+</span><span>        </span><span style="color:#65737e;">// have user choose some suit
+</span><span>        </span><span style="color:#b48ead;">let</span><span> suit = </span><span style="color:#96b5b4;">chooser</span><span>(</span><span style="color:#bf616a;">self</span><span>.</span><span style="color:#d08770;">0</span><span>);
+</span><span>
+</span><span>        </span><span style="color:#65737e;">// do stuff with suit
+</span><span>        </span><span style="color:#65737e;">// ...
+</span><span>    }
+</span><span>}
+</span></code></pre>
+<p>In the above case, we have a container that holds suits, and we
+want the user to choose one suit from our inner suit array. As the
+function is currently written however, the user could return any arbitrary
+suit, even if it was not contained within our array.</p>
+<pre data-lang="rust" style="background-color:#2b303b;color:#c0c5ce;" class="language-rust "><code class="language-rust" data-lang="rust"><span style="color:#65737e;">// here&#39;s what the user does:
+</span><span style="color:#b48ead;">let</span><span> suits = Suits::with_suits([Suit::Clubs, Suit::Diamonds]);
+</span><span>    
+</span><span style="color:#65737e;">// this means choose_suit will get a spades, even though our array does not include spades
+</span><span>suits.</span><span style="color:#96b5b4;">choose_suit</span><span>(|_| Suit::Spades);
+</span></code></pre>
+<p>How do we stop a user from selecting a Suit that is not in our array?</p>
+<p>We could:</p>
+<ul>
+<li>Just tell them to code better and not misuse our API (easy for us, but goes against Rust's "if it compiles it works" mantra)</li>
+<li>Put in runtime checks to ensure the choice is contained within our choices (works, but it's annoying and incurs a performance penalty)</li>
+</ul>
+<p>These options work but kind of suck. The question we should instead be asking is: "How do we prevent the user from even being in a position where they can select an incorrect choice?"</p>
+<p>We need some way to prevent a user from creating a choice out of "thin air". One way we can do this is to wrap each value in a type with no public constructors:</p>
+<pre data-lang="rust" style="background-color:#2b303b;color:#c0c5ce;" class="language-rust "><code class="language-rust" data-lang="rust"><span style="color:#b48ead;">pub struct </span><span>Choice&lt;T&gt;(T);
+</span><span>
+</span><span style="color:#b48ead;">impl</span><span>&lt;T&gt; Choice&lt;T&gt; {
+</span><span>    </span><span style="color:#65737e;">// so the closure can preview the choice&#39;s value
+</span><span>    </span><span style="color:#b48ead;">pub fn </span><span style="color:#8fa1b3;">view</span><span>(&amp;</span><span style="color:#bf616a;">self</span><span>) -&gt; &amp;T {
+</span><span>        &amp;</span><span style="color:#bf616a;">self</span><span>.</span><span style="color:#d08770;">0
+</span><span>    }
+</span><span>}
+</span></code></pre>
+<p>Then we can model our function like so:</p>
+<pre data-lang="rust" style="background-color:#2b303b;color:#c0c5ce;" class="language-rust "><code class="language-rust" data-lang="rust"><span style="color:#b48ead;">impl</span><span>&lt;</span><span style="color:#b48ead;">const</span><span> N: </span><span style="color:#b48ead;">usize</span><span>&gt; Suits&lt;N&gt; {
+</span><span>    </span><span style="color:#65737e;">// ...
+</span><span>    </span><span style="color:#b48ead;">pub fn </span><span style="color:#8fa1b3;">choose_suit</span><span>&lt;C&gt;(&amp;</span><span style="color:#bf616a;">self</span><span>, </span><span style="color:#bf616a;">chooser</span><span>: C)
+</span><span>    </span><span style="color:#b48ead;">where
+</span><span>        C: FnOnce([Choice&lt;Suit&gt;; N]) -&gt; Choice&lt;Suit&gt;
+</span><span>    {
+</span><span>        </span><span style="color:#65737e;">// have user choose some suit
+</span><span>        </span><span style="color:#b48ead;">let</span><span> Choice(suit) = </span><span style="color:#96b5b4;">chooser</span><span>(</span><span style="color:#bf616a;">self</span><span>.</span><span style="color:#d08770;">0.</span><span style="color:#96b5b4;">map</span><span>(Choice));
+</span><span>
+</span><span>        </span><span style="color:#65737e;">// do stuff with suit
+</span><span>        </span><span style="color:#65737e;">// ...
+</span><span>    }
+</span><span>    </span><span style="color:#65737e;">// ...
+</span><span>}
+</span></code></pre>
+<p>And our user would use it like this:</p>
+<pre data-lang="rust" style="background-color:#2b303b;color:#c0c5ce;" class="language-rust "><code class="language-rust" data-lang="rust"><span style="color:#b48ead;">let</span><span> suits = Suits::with_suits([Suit::Clubs, Suit::Diamonds]);
+</span><span>    
+</span><span style="color:#65737e;">// Now we cannot do this, because the type required to be returned is 
+</span><span style="color:#65737e;">// a Choice&lt;Suit&gt;, which cannot be constructed by the library user
+</span><span style="color:#65737e;">// suits.choose_suit(|_| Suit::Spades);
+</span><span>
+</span><span style="color:#65737e;">// Instead, we must choose from the two values provided
+</span><span>suits.</span><span style="color:#96b5b4;">choose_suit</span><span>(|[</span><span style="color:#bf616a;">one</span><span>, two]|
+</span><span>    </span><span style="color:#65737e;">// view and compare to make choice...
+</span><span>    </span><span style="color:#b48ead;">if</span><span> one.</span><span style="color:#96b5b4;">view</span><span>() == &amp;Suit::Clubs {
+</span><span>        two
+</span><span>    } </span><span style="color:#b48ead;">else </span><span>{
+</span><span>        one
+</span><span>    }
+</span><span>);
+</span></code></pre>
+<p>This is almost complete, but one thing we have failed to account for is selecting different choices of the same type. Since our type doesn't have a public constructor, any values of it are guaranteed to only come from us, which we only give to the public as parameters passed to the closure. However, Rust allows the user to move owned values, and so a user could move one of the values out of the closure and use it in a later invocation.</p>
+<pre data-lang="rust" style="background-color:#2b303b;color:#c0c5ce;" class="language-rust "><code class="language-rust" data-lang="rust"><span style="color:#b48ead;">let</span><span> suits = Suits::with_suits([Suit::Clubs, Suit::Diamonds]);
+</span><span>
+</span><span style="color:#65737e;">// smuggle value into outer scope
+</span><span style="color:#b48ead;">let</span><span> smuggler: Option&lt;Choice&lt;Suit&gt;&gt; = None;
+</span><span>suits.</span><span style="color:#96b5b4;">choose_suit</span><span>(|[</span><span style="color:#bf616a;">one</span><span>, two]|
+</span><span>    smuggler = Some(one);
+</span><span>    two
+</span><span>);
+</span><span>
+</span><span style="color:#65737e;">// here we are creating a new Suits value with suits that do not include our smuggled value
+</span><span style="color:#b48ead;">let</span><span> other_suits = Suits::with_suits([Suit::Diamonds, Suit::Hearts]);
+</span><span>
+</span><span style="color:#65737e;">// use smuggled value with different suits, now we have run into our original problem
+</span><span>other_suits.</span><span style="color:#96b5b4;">choose_suit</span><span>(|_| smuggler.</span><span style="color:#96b5b4;">unwrap</span><span>());
+</span></code></pre>
+<p>What user would even think to do this? Most likely no one would, and if they did, it would be their fault for using the library incorrectly. But we want assurances damn it!</p>
+<p>How do we prevent a user from smuggling out a choice? Well, we only want the user to have access to choices in the context of the closure, and after choosing is done there should be no choice values existing. In other words, the choices should only <em>live</em> as long as the <code>choose_suit</code> function. Sound familiar?</p>
+<p>Let's use Rust's borrow checker to manage this:</p>
+<pre data-lang="rust" style="background-color:#2b303b;color:#c0c5ce;" class="language-rust "><code class="language-rust" data-lang="rust"><span style="color:#65737e;">// we use PhantomData so we don&#39;t have to actually store any additional data at runtime (this instructs Rust to treat Choice as if it held some value &amp;&#39;a (), where () is a Zero-sized type containing no data)
+</span><span style="color:#b48ead;">use </span><span>std::marker::PhantomData;
+</span><span style="color:#b48ead;">pub struct </span><span>Choice&lt;</span><span style="color:#b48ead;">&#39;a</span><span>, T&gt;(T, PhantomData&lt;&amp;</span><span style="color:#b48ead;">&#39;a </span><span>()&gt;);
+</span><span>
+</span><span style="color:#b48ead;">impl</span><span>&lt;T&gt; Choice&lt;T&gt; {
+</span><span>    </span><span style="color:#65737e;">// new private constructor, here we are not actually storing the guard reference, simply &quot;linking&quot; Choice to its lifetime (such that Choice lives at most as long as the guard)
+</span><span>    </span><span style="color:#b48ead;">fn </span><span style="color:#8fa1b3;">with_guard</span><span>(</span><span style="color:#bf616a;">t</span><span>: T, </span><span style="color:#bf616a;">_guard</span><span>: &amp;&#39;_ ()) -&gt; Choice&lt;&#39;_, T&gt; {
+</span><span>        Choice(t, PhantomData)
+</span><span>    }
+</span><span>    </span><span style="color:#65737e;">// so the closure can preview the choice&#39;s value
+</span><span>    </span><span style="color:#b48ead;">pub fn </span><span style="color:#8fa1b3;">view</span><span>(&amp;</span><span style="color:#bf616a;">self</span><span>) -&gt; &amp;T {
+</span><span>        &amp;</span><span style="color:#bf616a;">self</span><span>.</span><span style="color:#d08770;">0
+</span><span>    }
+</span><span>}
+</span></code></pre>
+<p>Then we can use this in our function:</p>
+<pre data-lang="rust" style="background-color:#2b303b;color:#c0c5ce;" class="language-rust "><code class="language-rust" data-lang="rust"><span style="color:#b48ead;">impl</span><span>&lt;</span><span style="color:#b48ead;">const</span><span> N: </span><span style="color:#b48ead;">usize</span><span>&gt; Suits&lt;N&gt; {
+</span><span>    </span><span style="color:#65737e;">// ...
+</span><span>    </span><span style="color:#b48ead;">pub fn </span><span style="color:#8fa1b3;">choose_suit</span><span>&lt;C&gt;(&amp;</span><span style="color:#bf616a;">self</span><span>, </span><span style="color:#bf616a;">chooser</span><span>: C)
+</span><span>    </span><span style="color:#b48ead;">where
+</span><span>        C: FnOnce([Choice&lt;&#39;_, Suit&gt;; N]) -&gt; Choice&lt;&#39;_, Suit&gt;
+</span><span>    {
+</span><span>        </span><span style="color:#65737e;">// our guard
+</span><span>        </span><span style="color:#b48ead;">let</span><span> guard = ();
+</span><span>        </span><span style="color:#b48ead;">let</span><span> choices = </span><span style="color:#bf616a;">self</span><span>.</span><span style="color:#d08770;">0.</span><span style="color:#96b5b4;">map</span><span>(|</span><span style="color:#bf616a;">suit</span><span>| Choice::with_guard(suit, &amp;guard));
+</span><span>        </span><span style="color:#65737e;">// have user choose some suit
+</span><span>        </span><span style="color:#b48ead;">let</span><span> Choice(suit) = </span><span style="color:#96b5b4;">chooser</span><span>(choices);
+</span><span>
+</span><span>        </span><span style="color:#65737e;">// do stuff with suit
+</span><span>        </span><span style="color:#65737e;">// ...
+</span><span>        </span><span style="color:#65737e;">// after we are all done, guard will be dropped here, so there will be no possible way for the Choice values to still exist beyond this call
+</span><span>    }
+</span><span>    </span><span style="color:#65737e;">// ...
+</span><span>}
+</span></code></pre>
+<p>If we try to use our previous smuggler example, we'll get an error that any Choice we try to smuggle out doesn't live long enough, and thus there will be no way for Choices to escape the closure.</p>
+
+
+<p class="tags-data">
+  
+</p>
+
+      </main>
+      <footer>
+          <hr>
+<div id="footer-container">
+  
+  
+</div>
+      </footer>
+</body>
+</html>
